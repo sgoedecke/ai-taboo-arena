@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Double Taboo Trap</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        .game-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .conversation {
+            margin: 20px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .message {
+            padding: 12px 16px;
+            margin: 0;
+            display: flex;
+            align-items: flex-start;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .message:last-child {
+            border-bottom: none;
+        }
+        
+        .message.modelA {
+            background-color: #e3f2fd;
+        }
+        
+        .message.modelB {
+            background-color: #f3e5f5;
+        }
+        
+        .message.current {
+            border-left: 4px solid #2196f3;
+        }
+        
+        .message-content {
+            flex-grow: 1;
+            margin-left: 12px;
+        }
+        
+        .message-header {
+            display: flex;
+            align-items: baseline;
+            margin-bottom: 4px;
+        }
+        
+        .player-name {
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        
+        .model-name {
+            font-size: 0.85em;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .message-text {
+            line-height: 1.4;
+        }
+        
+        .game-info {
+            background-color: #f5f5f5;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .game-info h2 {
+            margin-top: 0;
+            margin-bottom: 12px;
+            font-size: 1.2em;
+        }
+        
+        .game-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+        
+        .player-info {
+            padding: 12px;
+            border-radius: 6px;
+        }
+        
+        .player-info.modelA {
+            background-color: #e3f2fd;
+        }
+        
+        .player-info.modelB {
+            background-color: #f3e5f5;
+        }
+        
+        #gameSetup {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: opacity 0.3s;
+        }
+        
+        #gameSetup.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        
+        #gameSetup input {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        #gameSetup button {
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        #gameSetup button:hover {
+            background-color: #1976d2;
+        }
+        
+        .game-over {
+            margin-top: 16px;
+            padding: 12px;
+            background-color: #fff3cd;
+            border: 1px solid #ffecb5;
+            border-radius: 4px;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>Double Taboo Trap</h1>
+        
+        <div id="gameSetup">
+            <h2>Start New Game</h2>
+            <input type="text" id="topic" placeholder="Enter topic" value="Making coffee">
+            <input type="text" id="tabooA" placeholder="Model A's taboo word" value="water">
+            <input type="text" id="tabooB" placeholder="Model B's taboo word" value="bean">
+            <button onclick="startGame()">Start Game</button>
+        </div>
+
+        <div id="gameStatus"></div>
+        <div id="conversation" class="conversation"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentTurnElement = null;
+        
+        function startGame() {
+            const topic = document.getElementById('topic').value;
+            const tabooA = document.getElementById('tabooA').value;
+            const tabooB = document.getElementById('tabooB').value;
+            
+            document.getElementById('conversation').innerHTML = '';
+            document.getElementById('gameStatus').innerHTML = 'Game starting...';
+            
+            socket.emit('startGame', { topic, tabooA, tabooB });
+        }
+
+        function disableGameSetup() {
+            document.getElementById('gameSetup').classList.add('disabled');
+        }
+
+        function enableGameSetup() {
+            document.getElementById('gameSetup').classList.remove('disabled');
+        }
+
+        function displayGameState(gameState) {
+            const gameStatus = document.getElementById('gameStatus');
+            gameStatus.innerHTML = `
+                <div class="game-info">
+                    <h2>Topic: ${gameState.topic}</h2>
+                    <div class="game-info-grid">
+                        <div class="player-info modelA">
+                            <strong>Model A:</strong> ${gameState.models.modelA}<br>
+                            <strong>Taboo word:</strong> ${gameState.tabooWords.modelA}
+                        </div>
+                        <div class="player-info modelB">
+                            <strong>Model B:</strong> ${gameState.models.modelB}<br>
+                            <strong>Taboo word:</strong> ${gameState.tabooWords.modelB}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const conversation = document.getElementById('conversation');
+            conversation.innerHTML = '';
+            
+            gameState.turns.forEach(turn => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${turn.player}`;
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="player-name">${turn.player}</span>
+                            <span class="model-name">(${turn.model})</span>
+                        </div>
+                        <div class="message-text">${turn.response}</div>
+                    </div>
+                `;
+                conversation.appendChild(messageDiv);
+            });
+
+            if (gameState.gameOver) {
+                gameStatus.innerHTML += `
+                    <div class="game-over">
+                        <strong>Game Over!</strong><br>
+                        Winner: ${gameState.winner} (${gameState.models[gameState.winner]})
+                    </div>
+                `;
+                enableGameSetup();
+            } else {
+                disableGameSetup();
+            }
+        }
+
+        socket.on('noGame', () => {
+            enableGameSetup();
+        });
+
+        socket.on('gameInProgress', (gameState) => {
+            displayGameState(gameState);
+        });
+
+        socket.on('gameStarted', (data) => {
+            disableGameSetup();
+            document.getElementById('gameStatus').innerHTML = `
+                <div class="game-info">
+                    <h2>Topic: ${data.topic}</h2>
+                    <div class="game-info-grid">
+                        <div class="player-info modelA">
+                            <strong>Model A:</strong> ${data.models.modelA}<br>
+                            <strong>Taboo word:</strong> ${data.tabooWords.modelA}
+                        </div>
+                        <div class="player-info modelB">
+                            <strong>Model B:</strong> ${data.models.modelB}<br>
+                            <strong>Taboo word:</strong> ${data.tabooWords.modelB}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        socket.on('turnProgress', (data) => {
+            if (!currentTurnElement || currentTurnElement.getAttribute('data-player') !== data.player) {
+                currentTurnElement = document.createElement('div');
+                currentTurnElement.className = `message ${data.player} current`;
+                currentTurnElement.setAttribute('data-player', data.player);
+                currentTurnElement.innerHTML = `
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="player-name">${data.player}</span>
+                            <span class="model-name">(${data.model})</span>
+                        </div>
+                        <div class="message-text"></div>
+                    </div>
+                `;
+                document.getElementById('conversation').appendChild(currentTurnElement);
+            }
+            
+            const messageText = currentTurnElement.querySelector('.message-text');
+            messageText.textContent += data.content;
+        });
+
+        socket.on('turnComplete', (data) => {
+            if (currentTurnElement) {
+                currentTurnElement.classList.remove('current');
+                currentTurnElement = null;
+            }
+        });
+
+        socket.on('gameOver', (data) => {
+            const gameStatus = document.getElementById('gameStatus');
+            gameStatus.innerHTML += `
+                <div class="game-over">
+                    <strong>Game Over!</strong><br>
+                    Winner: ${data.winner} (${data.winningModel})<br>
+                    Reason: ${data.reason}
+                </div>
+            `;
+            enableGameSetup();
+        });
+
+        socket.on('error', (message) => {
+            const gameStatus = document.getElementById('gameStatus');
+            gameStatus.innerHTML += `
+                <div class="game-over">
+                    <strong>Error:</strong> ${message}
+                </div>
+            `;
+        });
+    </script>
+</body>
+</html>
